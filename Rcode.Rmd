@@ -1,0 +1,528 @@
+---
+title: "Data Wrangling Final Project"
+geometry: margin=1in
+header-includes: \usepackage{setspace}\doublespacing
+output:
+  html_document:
+    df_print: paged
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 5, fig.width = 8)
+library(tidyverse)
+library(dplyr)
+library(twitteR)
+library(magrittr)
+library(lubridate)
+library(ggplot2)
+library(tidytext)
+library(cowplot)
+```
+##Introduction##  
+
+In this semester, our life has been changed dramatically. Due to the high infection rate and lack of efficient treatment of coronavious, we were grounded at home for approximately 3 months. During quarantine period, our only connection with outside world was social media. One of the most common used nowsdays is Twitter. In minites, more than 10 thousands tweets are posted, and these tweets give us access to hottest news and information. Hence, in this project, I would like to conduct a analysis on twitters during the special time frame. From trillions of twitter accounts, I chosen five representative media groups from United States, NYTimes, WSJ, CNN, CBSNews, and NBCNews. Other than media group from the US, I chose 3 foreign media organizations, which mainly used English in tweets, including XinHuaNews from China, ABSCBNNews from Philippines, and BBCNews from United Kingdom. I tried use **googleTranslate** package<br>
+In data processing,  I first extracted non-stopping words from each tweets text, and constructed a plot of each world with count. Then, I repeated the same step but with daily time frame. Moreover, I drew comparisons among each media groups in US and comparisons between US media group and foreign media groups. I finalized my project with a sentimental analysis of tweets and made a connection between sentiments and number of total number death by coronavirus in each country. I used the data set from **https://ourworldindata.org/coronavirus** as a referenced total number of coronavirus death by country. <br>
+
+##Data Preparation##
+```{r}
+## Set up twitter API 
+consumer_key <- "mbtGFgktG5RafKWkV4VWahwOi"
+consumer_secret <- "qGdYGwYgqz6298bGKYmIiFJZr3X9Ng1L7ATTca6QqMfnDe65Qn"
+access_token <- "1249554594839093250-Ynkdow8137HmHUz4BlC6uQcMxH68DB"
+access_secret <- "EEIQ8m3EkiPP3LlfXEsqJLZWekwPtw41j5BUTyh5igwyr"
+setup_twitter_oauth(consumer_key, consumer_secret, access_token, access_secret)
+```
+The package used to scrape tweets from twitter in this project is "twitteR", retweeted text from other users were also included. I first collected 3000 tweets from each user, and then convert them into seperate data frame, with function **twlistTODF()**. This is the most time consuming step. <br>
+```{r include=FALSE}
+## construct df for each media group 
+nytimes <- userTimeline("nytimes", n=3000, includeRts=TRUE)
+nytimes_df <- twListToDF(nytimes)
+wsj <- userTimeline("wsj", n=3000, includeRts=TRUE)
+wsj_df <- twListToDF(wsj)
+cnn <- userTimeline("CNN", n=3000, includeRts=TRUE)
+cnn_df <- twListToDF(cnn)
+CBSNews <- userTimeline("CBSNews", n=3000, includeRts=TRUE)
+cbs_df <- twListToDF(CBSNews)
+NBCNews <- userTimeline("NBCNews", n=3000, includeRts=TRUE)
+nbc_df <- twListToDF(NBCNews)
+xinhua <- userTimeline("XHNews", n=3000, includeRts=TRUE)
+xinhua_df <- twListToDF(xinhua)
+abscbn <- userTimeline("ABSCBNNews", n=3000, includeRts=TRUE)
+abscbn_df <- twListToDF(abscbn)
+bbc <- userTimeline("BBCNews", n=3000, includeRts=TRUE)
+bbc_df <- twListToDF(bbc)
+```
+The next step is to clean the data collected. The information required in data analysis was tweets text and time tweets posted. Taking NYTimes as an example, I selected *text* and *date* columns from the original data frame. <br>
+```{r echo=FALSE}
+head.nytimes_df <- nytimes_df %>%
+  .[1:3, ]
+knitr::kable(head.nytimes_df)
+```
+As mentioned in **Introduction**, I would like to make comparison between media groups. To make this comparison process easier, I added a new column, named *user*, to the data frame, which is name of each media group. For instance, in this case, *user* would be nytimes. For foreign media groups, instead of using name of the media group, I changed *user* column to country name, e.g., XinhuaNews to China. In next part, I would used these media groups as reprsentatives of their countries and draw camparison between countries. Last, I checked the format of date, and changed it to *date* data type. Finalized nytimes data frame is shown below as an example. <br>
+```{r include=FALSE}
+## select text and date from data set and split text into words
+## add index for each media
+ny.td <- nytimes_df %>% 
+  mutate(user = "nytimes") %>%
+  mutate(date = as.Date(format(created, "%Y/%m/%d"))) %>%
+  select(text, user, date)
+wsj.td <- wsj_df %>% 
+  mutate(user = "wsj") %>%
+  mutate(date = as.Date(format(created, "%Y/%m/%d"))) %>%
+  select(text, user, date)
+cnn.td <- cnn_df %>% 
+  mutate(user = "cnn") %>%
+  mutate(date = as.Date(format(created, "%Y/%m/%d"))) %>%
+  select(text, user, date)
+cbs.td <- cbs_df %>% 
+  mutate(user = "cbs") %>%
+  mutate(date = as.Date(format(created, "%Y/%m/%d"))) %>%
+  select(text, user, date)
+nbc.td <- nbc_df %>% 
+  mutate(user = "nbc") %>%
+  mutate(date = as.Date(format(created, "%Y/%m/%d"))) %>%
+  select(text, user, date)
+xinhua.td <- xinhua_df %>% 
+  mutate(user = "China") %>%
+  mutate(date = as.Date(format(created, "%Y/%m/%d"))) %>%
+  select(text, user, date) 
+abscbn.td <-abscbn_df %>% 
+  mutate(user = "Philippines") %>%
+  mutate(date = as.Date(format(created, "%Y/%m/%d"))) %>%
+  select(text, user, date)
+bbc.td <-bbc_df %>% 
+  mutate(user = "UK") %>%
+  mutate(date = as.Date(format(created, "%Y/%m/%d"))) %>%
+  select(text, user, date)
+```
+```{r echo=FALSE}
+head.ny.td <- ny.td %>%
+  .[1:6, ]
+knitr::kable(head.ny.td)
+```
+After data preparation, I binded data frames of all US media groups into one data frame, named *us.df*, and binded data frames of media groups from foreign countries and CNN together, named *world.df*. In *world.df* user name of CNN was changed to *US*, as I was interested in analyzing difference between countries. <br>
+```{r include=FALSE}
+## bind into one data frame
+us.df <- rbind(ny.td, wsj.td, cnn.td, cbs.td, nbc.td) %>%
+  as.data.frame()
+world.df <- cnn.td %>%
+  mutate(user = "US") %>%
+  rbind(xinhua.td, abscbn.td, bbc.td)
+```
+
+##Data Analysis##
+#Non-Stop Words Anlysis#
+To do non-stop words analysis, I extracted words from text column and anti-joined it with stop words. The table below shows the top 10 non-stop words in nytimes data frame. However, some words with no specific meaning were not filtered, such as "https", "t.co" and "rt" (short for retweet). Therefore, in subsequent procedures, "https", "t.co" and "rt" would be removed from data frame manually. <br>
+```{r echo=FALSE}
+data("stop_words")
+ny_unstop <- ny.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, ]
+knitr::kable(ny_unstop)
+```
+After removed "https", "t.co" and "rt" from each data frame, we checked the top 10 most frequently used non-stop words by each media group again. The summarized table is shown below. In **WSJ** column, *wsjopinion* and *street* had high ranking. I excluded these two words from WSJ data frame, because they did not provide us with much concrete information. Likewise, word, *york* from NYtimes was removed. <br>
+```{r echo=FALSE}
+ny_unstop <- ny.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, 1] %>%
+  rename("nytimes" = "word")
+wsj_unstop <- wsj.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, 1] %>%
+  rename("wsj" = "word")
+cnn_unstop <- cnn.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, 1] %>%
+  rename("cnn" = "word")
+cbs_unstop <- cbs.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, 1] %>%
+  rename("cbs" = "word")
+nbc_unstop <- nbc.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, 1] %>%
+  rename("nbc" = "word")
+stop <- cbind(ny_unstop, wsj_unstop, cnn_unstop, cbs_unstop, nbc_unstop) %>%
+  as.data.frame() 
+knitr::kable(stop)
+```
+Then, I used the clean data set to plot the top 10 frequently used non-stop words by each media group in the US. The figure is shown below. <br>
+```{r echo=FALSE}
+plot_list = NULL
+plot_list[[1]] <- ny.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt", word != "york") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, ] %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) + geom_bar(alpha = 0.8, stat = "identity", show.legend = TRUE) + xlab("non-stop word") + coord_flip()
+plot_list[[2]] <- wsj.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt", word != "wsjopinion", word != "street") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, ] %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) + geom_bar(alpha = 0.8, stat = "identity", show.legend = TRUE) + xlab("non-stop word") + coord_flip()
+plot_list[[3]] <- cnn.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, ] %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) + geom_bar(alpha = 0.8, stat = "identity", show.legend = TRUE) + xlab("non-stop word") + coord_flip()
+plot_list[[4]] <- cbs.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, ] %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) + geom_bar(alpha = 0.8, stat = "identity", show.legend = TRUE) + xlab("non-stop word") + coord_flip()
+plot_list[[5]] <- nbc.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, ] %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) + geom_bar(alpha = 0.8, stat = "identity", show.legend = TRUE) + xlab("non-stop word") + coord_flip()
+p <- plot_grid(plotlist = plot_list, ncol = 3, nrow = 2, labels = c('NYtimes', 'WSJ', 'CNN', 'CBS', 'NBC'), label_size = 11)
+ title <- ggdraw() + 
+  draw_label(
+    "Top 10 Non-stop Words in All Tweets of Each Media Groups in the US",
+    fontface = 'bold',
+    x = 0,
+    hjust = -0.6
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_grid(
+  title, p,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(0.1, 1)
+)
+```
+From the graph, we could see that the hottest word was undoutedly "coronavirus", and "Trump" had high ranking in every chart. General speaking, public concerned with epidemic outbreak, and government's reaction to it. <br>
+
+Then, I would like to investigate the trend of daily hot word. First, I grouped all words by date, then counted the frequency of words on daily basis. I used **slice()** function to select the first word from each day group. Table of daily hot word from NYTimes in a week is shown below as an example. 
+```{r}
+ny_day <- ny.td %>%
+  unnest_tokens(word, text) %>%
+  group_by(date) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(date, desc(n)) %>%
+  filter(word != "https", word != "t.co",  word != "rt", word != "rt") %>%
+  slice(1L) %>%
+  .[1:7, ]
+knitr::kable(ny_day)
+```
+In the following step, I ploted hot word on daily basis from each media group. <br>
+```{r echo=FALSE}
+## I would like to investigate the hit words by day time frame 
+## group words by date
+## anti join data set with stop words
+## filter "https" and "t.co" which is domain name of twitter
+## filter "rt" which is short for "retweeted"
+plot_list = NULL
+plot_list[[1]] <- ny.td %>%
+  unnest_tokens(word, text) %>%
+  group_by(date) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(date, desc(n)) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  slice(1L) %>%
+  ggplot(aes(y = n, x = date, fill = word)) + geom_bar(alpha = 1, stat = "identity", show.legend = TRUE) + ylim(0, 65)
+plot_list[[2]] <- wsj.td %>%
+  unnest_tokens(word, text) %>%
+  group_by(date) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(date, desc(n)) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  slice(1L) %>%
+  ggplot(aes(y = n, x = date, fill = word)) + geom_bar(alpha = 1, stat = "identity", show.legend = TRUE) + ylim(0, 65)
+plot_list[[3]] <- cnn.td %>%
+  unnest_tokens(word, text) %>%
+  group_by(date) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(date, desc(n)) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  slice(1L) %>%
+  ggplot(aes(y = n, x = date, fill = word)) + geom_bar(alpha = 1, stat = "identity", show.legend = TRUE) + ylim(0, 65)
+plot_list[[4]] <- cbs.td %>%
+  unnest_tokens(word, text) %>%
+  group_by(date) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(date, desc(n)) %>%
+  filter(word != "https", word != "t.co",  word != "rt", word != "cbseveningnews", word != "60minutes") %>%
+  slice(1L) %>%
+  ggplot(aes(y = n, x = date, fill = word)) + geom_bar(alpha = 1, stat = "identity", show.legend = TRUE) + ylim(0, 65)
+plot_list[[5]] <- nbc.td %>%
+  unnest_tokens(word, text) %>%
+  group_by(date) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(date, desc(n)) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  slice(1L) %>%
+  ggplot(aes(y = n, x = date, fill = word)) + geom_bar(alpha = 1, stat = "identity", show.legend = TRUE) + ylim(0, 65)
+p <- plot_grid(plotlist = plot_list, ncol = 3, nrow = 2, labels = c('NYtimes', 'WSJ', 'CNN', 'CBS', 'NBC'), label_size = 11)
+title <- ggdraw() + 
+  draw_label(
+    "Daily Top Non-stop Words of Each Media Groups",
+    fontface = 'bold',
+    x = 0,
+    hjust = -1
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_grid(
+  title, p,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(0.1, 1)
+)
+```
+
+
+I repeated same steps on tweets collected from foreign media groups. 
+```{r echo=FALSE}
+china_unstop <- xinhua.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, 1] %>%
+  rename("china" = "word")
+phi_unstop <- abscbn.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, 1] %>%
+  rename("philippines" = "word")
+uk_unstop <- bbc.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, 1] %>%
+  rename("uk" = "word")
+stop_world <- cbind(china_unstop, phi_unstop, uk_unstop) %>%
+  as.data.frame() 
+knitr::kable(stop_world)
+```
+
+
+```{r echo=FALSE}
+plot_list = NULL
+plot_list[[1]] <- xinhua.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt", word != "york") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, ] %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) + geom_bar(alpha = 0.8, stat = "identity", show.legend = TRUE) + xlab("non-stop word") + coord_flip()
+plot_list[[2]] <- abscbn.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt", word != "sa", word != "ng", word != "ang", word != "na", word != "mga") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, ] %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) + geom_bar(alpha = 0.8, stat = "identity", show.legend = TRUE) + xlab("non-stop word") + coord_flip()
+plot_list[[3]] <- bbc.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt", word != "tomorrowspaperstoday", word != "bbcpapers", word != "bbcpolitics", word != "bbcworld", word != "bbcsport") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, ] %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) + geom_bar(alpha = 0.8, stat = "identity", show.legend = TRUE) + xlab("non-stop word") + coord_flip()
+plot_list[[4]] <- cnn.td %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  count(word) %>%
+  arrange(desc(n)) %>%
+  .[1:10, ] %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = word)) + geom_bar(alpha = 0.8, stat = "identity", show.legend = TRUE) + xlab("non-stop word") + coord_flip()
+p <- plot_grid(plotlist = plot_list, ncol = 2, nrow = 2, labels = c('China', 'Philippine', 'UK', 'US'), label_size = 11)
+ title <- ggdraw() + 
+  draw_label(
+    "Top 10 Non-stop Words in All Tweets of foreign Media Groups",
+    fontface = 'bold',
+    x = 0,
+    hjust = -0.6
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_grid(
+  title, p,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(0.1, 1)
+)
+```
+
+```{r echo=FALSE}
+## I would like to investigate the hit words by day time frame 
+## group words by date
+## anti join data set with stop words
+## filter "https" and "t.co" which is domain name of twitter
+## filter "rt" which is short for "retweeted"
+plot_list = NULL
+plot_list[[1]] <- xinhua.td %>%
+  unnest_tokens(word, text) %>%
+  group_by(date) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(date, desc(n)) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  slice(1L) %>%
+  ggplot(aes(y = n, x = date, fill = word)) + geom_bar(alpha = 1, stat = "identity", show.legend = TRUE) + ylim(0, 65)
+plot_list[[2]] <- abscbn.td %>%
+  unnest_tokens(word, text) %>%
+  group_by(date) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(date, desc(n)) %>%
+  filter(word != "https", word != "t.co",  word != "rt", word != "sa", word != "ng", word != "ang", word != "na", word != "mga") %>%
+  slice(1L) %>%
+  ggplot(aes(y = n, x = date, fill = word)) + geom_bar(alpha = 1, stat = "identity", show.legend = TRUE) + ylim(0, 65)
+plot_list[[3]] <- bbc.td %>%
+  unnest_tokens(word, text) %>%
+  group_by(date) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(date, desc(n)) %>%
+  filter(word != "https", word != "t.co",  word != "rt", word != "tomorrowspaperstoday", word != "bbcpapers", word != "bbcpolitics", word != "bbcworld", word != "bbcsport") %>%
+  slice(1L) %>%
+  ggplot(aes(y = n, x = date, fill = word)) + geom_bar(alpha = 1, stat = "identity", show.legend = TRUE) + ylim(0, 65)
+plot_list[[4]] <- cnn.td %>%
+  unnest_tokens(word, text) %>%
+  group_by(date) %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(date, desc(n)) %>%
+  filter(word != "https", word != "t.co",  word != "rt") %>%
+  slice(1L) %>%
+  ggplot(aes(y = n, x = date, fill = word)) + geom_bar(alpha = 1, stat = "identity", show.legend = TRUE) + ylim(0, 65)
+p <- plot_grid(plotlist = plot_list, ncol = 3, nrow = 2, labels = c('China', 'Philippine', 'UK', 'US'), label_size = 11)
+title <- ggdraw() + 
+  draw_label(
+    "Daily Top Non-stop Words of Each Media Groups by Country",
+    fontface = 'bold',
+    x = 0,
+    hjust = -1
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_grid(
+  title, p,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(0.1, 1)
+)
+```
+
+```{r}
+## sentiment analysis 
+us.sentiment <- us.df %>%
+  unnest_tokens(word, text) %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(user, index = date, sentiment)%>%
+  spread(sentiment, n, fill = 0)%>%
+  mutate(sentiment = positive-negative)
+```
+
+
+```{r}
+ggplot(us.sentiment, aes(index, sentiment, fill = user)) + geom_bar(alpha = 1, stat = "identity", show.legend = FALSE)+ facet_wrap(~user, ncol = 3, scales = "free_x") + ggtitle("Sentiment Analysis of US Media") + theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+
+```{r}
+## analysis sensitivity by country 
+## china:xinhua XHNews
+## us: cnn
+## Filipin: abscbn ABSCBNNews
+## uk: bbc BBCNews
+## collect tweets
+
+```
+```{r}
+
+```
+
+```{r}
+## sentiment analysis by country
+world.sentiment <- world.df %>%
+  unnest_tokens(word, text) %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(user, index = date, sentiment)%>%
+  spread(sentiment, n, fill = 0)%>%
+  mutate(sentiment = positive-negative)
+ggplot(world.sentiment, aes(index, sentiment, fill = user)) + geom_bar(alpha = 1, stat = "identity", show.legend = FALSE)+ facet_wrap(~user, ncol = 2, scales = "free_x") + ggtitle("Sentiment Analysis of Foreign and US Media") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+
+```{r}
+## https://ourworldindata.org/coronavirus reference data set
+corona.death <- read_csv("~/Desktop/MSDS/second semester/data wrangling/project/total-deaths-covid-19.csv") %>%
+  filter(Entity == "China"| Entity == "United States" | Entity == "India" | Entity == "Philippines" | Entity == "India") %>%
+  mutate(Death = "Total confirmed deaths due to COVID-19 (deaths)") %>%
+  mutate(Date = as.Date(Date))
+
+ggplot(corona.death, aes(Death, Date, fill = Entity)) +facet_wrap(~Entity, ncol = 3, scales = "free_x")
+```
+ddd <br>
